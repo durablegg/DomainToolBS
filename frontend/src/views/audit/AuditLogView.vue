@@ -32,6 +32,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="refresh">查询</el-button>
+        <el-button @click="resetQuery">重置</el-button>
         <el-button @click="exportCsv" :loading="exporting">导出 CSV</el-button>
       </el-form-item>
     </el-form>
@@ -104,6 +105,17 @@ const filters = reactive({ action: '', object_type: '', operator: '', keyword: '
 const exporting = ref(false)
 const detailVisible = ref(false)
 const current = ref<AuditLog | null>(null)
+
+function resetQuery() {
+  filters.action = ''
+  filters.object_type = ''
+  filters.operator = ''
+  filters.keyword = ''
+  filters.domain_id = null
+  filters.timeRange = null
+  page.value = 1
+  refresh()
+}
 
 async function refresh() {
   loading.value = true
