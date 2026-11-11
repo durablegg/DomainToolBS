@@ -26,3 +26,5 @@ export interface AuditPage {
 export const listAuditLogs = (params: Record<string, unknown>) =>
   request.get<AuditPage>('/audit/logs', { params })
 export const getAuditLog = (id: number) => request.get<AuditLog>(`/audit/logs/${id}`)
+export const exportAuditLogs = (params: Record<string, unknown>) =>
+  request.get('/audit/logs/export', { params, responseType: 'blob' })

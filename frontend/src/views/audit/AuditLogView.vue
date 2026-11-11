@@ -14,6 +14,17 @@
       <el-form-item label="关键字">
         <el-input v-model="filters.keyword" placeholder="名称/DN/参数" clearable />
       </el-form-item>
+      <el-form-item label="时间范围">
+        <el-date-picker
+          v-model="filters.timeRange"
+          type="daterange"
+          value-format="YYYY-MM-DD"
+          range-separator="至"
+          start-placeholder="开始日期"
+          end-placeholder="结束日期"
+          clearable
+        />
+      </el-form-item>
       <el-form-item v-if="!isAuditor" label="域">
         <el-select v-model="filters.domain_id" placeholder="全部域" clearable style="width: 160px" @change="refresh">
           <el-option v-for="d in domains" :key="d.id" :label="d.name" :value="d.id" />
@@ -21,6 +32,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="refresh">查询</el-button>
+        <el-button @click="exportCsv" :loading="exporting">导出 CSV</el-button>
       </el-form-item>
     </el-form>
 
@@ -72,7 +84,8 @@
 
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
-import { getAuditLog, listAuditLogs, type AuditLog } from '@/api/audit'
+import { ElMessage } from 'element-plus'
+import { exportAuditLogs, getAuditLog, listAuditLogs, type AuditLog } from '@/api/audit'
 import { formatDateTime } from '@/utils/datetime'
 import { listDomains, type DomainConfig } from '@/api/domain'
 import { useUserStore } from '@/store/user'
@@ -87,7 +100,8 @@ const total = ref(0)
 const page = ref(1)
 const size = ref(20)
 const loading = ref(false)
-const filters = reactive({ action: '', object_type: '', operator: '', keyword: '', domain_id: null as number | null })
+const filters = reactive({ action: '', object_type: '', operator: '', keyword: '', domain_id: null as number | null, timeRange: null as [string, string] | null })
+const exporting = ref(false)
 const detailVisible = ref(false)
 const current = ref<AuditLog | null>(null)
 
@@ -95,7 +109,12 @@ async function refresh() {
   loading.value = true
   try {
     const params: Record<string, unknown> = { ...filters, page: page.value, size: size.value }
+    delete (params as Record<string, unknown>).timeRange
     if (filters.domain_id == null) delete (params as Record<string, unknown>).domain_id
+    if (filters.timeRange) {
+      params.start = `${filters.timeRange[0]}T00:00:00`
+      params.end = `${filters.timeRange[1]}T23:59:59`
+    }
     const r = await listAuditLogs(params)
     rows.value = r.items
     total.value = r.total
@@ -107,6 +126,33 @@ async function refresh() {
 async function openDetail(row: AuditLog) {
   current.value = await getAuditLog(row.id)
   detailVisible.value = true
+}
+
+async function exportCsv() {
+  exporting.value = true
+  try {
+    const params: Record<string, unknown> = { ...filters }
+    delete (params as Record<string, unknown>).timeRange
+    if (filters.domain_id == null) delete (params as Record<string, unknown>).domain_id
+    if (filters.timeRange) {
+      params.start = `${filters.timeRange[0]}T00:00:00`
+      params.end = `${filters.timeRange[1]}T23:59:59`
+    }
+    const blob = await exportAuditLogs(params)
+    const url = window.URL.createObjectURL(new Blob([blob]))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    window.URL.revokeObjectURL(url)
+    ElMessage.success('导出成功')
+  } catch {
+    ElMessage.error('导出失败')
+  } finally {
+    exporting.value = false
+  }
 }
 
 onMounted(async () => {

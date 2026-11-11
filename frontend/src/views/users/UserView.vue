@@ -30,7 +30,7 @@
         <el-form-item>
           <el-button type="primary" :loading="loading" @click="load">查询</el-button>
           <el-button @click="resetQuery">重置</el-button>
-          <el-button v-if="writable" type="success" @click="showCreate = true">新建用户</el-button>
+          <el-button v-if="writable" type="success" @click="openCreate">新建用户</el-button>
         </el-form-item>
       </el-form>
 
@@ -235,6 +235,14 @@ const createForm = reactive({
   userPrincipalName: '', mail: '', department: '', title: '', telephoneNumber: '', description: '',
   password_never_expires: false, must_change_next_logon: true,
 })
+function openCreate() {
+  Object.assign(createForm, {
+    ou_dn: '', sAMAccountName: '', displayName: '', password: '',
+    userPrincipalName: '', mail: '', department: '', title: '', telephoneNumber: '', description: '',
+    password_never_expires: false, must_change_next_logon: true,
+  })
+  showCreate.value = true
+}
 async function doCreate() {
   if (!domainId.value) return
   if (!createForm.ou_dn || !createForm.sAMAccountName || !createForm.displayName || !createForm.password) {
