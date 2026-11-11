@@ -1,5 +1,16 @@
 # CHANGELOG
 
+## [2026-11-11] 修复+新增：批量导入OU级联、新建用户重置、审计日志导出
+
+- **修复** `frontend/src/views/batch/BatchView.vue`：批量导入「选择导入目标 OU」由平铺 `el-select` 改为 `el-tree-select`，复用已有 OU 树（`sub_ous`），支持展开选择子 OU（如「踏浪第一事业部 → 子OU」）。
+- **修复** `frontend/src/views/users/UserView.vue`：「新建用户」按钮改为 `openCreate()`，打开弹窗前重置 `createForm` 全部字段，解决残留上次用户信息的问题。
+- **新增** 审计日志支持按时间范围筛选（列表与导出一致），并新增「导出 CSV」按钮，按当前筛选（操作/对象类型/操作人/关键字/时间范围）导出全部匹配记录：
+  - `backend/app/api/v1/audit.py`：新增 `GET /audit/logs/export`（CSV 流式下载，UTF-8 BOM 适配 Excel），`list_logs` 增加 `start`/`end` 时间筛选；权限保持超管/管理员/审计员。
+  - `frontend/src/views/audit/AuditLogView.vue`：查询栏新增「时间范围」daterange + 「导出 CSV」按钮。
+  - `frontend/src/api/audit.ts`：新增 `exportAuditLogs()`。
+- **原因** 批量导入只能选顶层 OU、新建用户弹窗残留上次信息、审计日志无法按时间筛选导出。
+- **影响** 纯功能增强/易用性修复，无数据库 schema 变更；生产更新：后端单文件热更 + 重启后端容器，前端重新打包 + 替换 dist + nginx reload。
+
 ## [2026-09-18] 文档：细化生产机离线装 Docker 命令
 
 - **更新** `docs/生产服务器离线部署指南.md` 第 1.2 节：把「完全离线装 Docker」从简述展开为精确命令——下载端加官方源 + 递归 `apt-get download` 抓全 deb → `tar` 携带 → 生产机 `dpkg -i` 安装，含依赖缺失处理与版本一致性提醒。

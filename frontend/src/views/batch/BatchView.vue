@@ -24,9 +24,7 @@
         >
           <el-button>选择 CSV</el-button>
         </el-upload>
-        <el-select v-if="action === 'create'" v-model="importOu" placeholder="选择导入目标 OU" filterable style="width: 280px">
-          <el-option v-for="o in ouOptions" :key="o.value" :label="o.label" :value="o.value" />
-        </el-select>
+        <el-tree-select v-if="action === 'create'" v-model="importOu" :data="ouOptions" value-key="value" :props="{ label: 'label', children: 'children' }" check-strictly placeholder="选择导入目标 OU（支持子OU）" filterable clearable style="width: 320px" />
         <el-button type="success" :disabled="!canSubmit" :loading="importing" @click="doSubmit">开始执行</el-button>
         <el-button @click="doExport" :disabled="!domainId">导出当前域用户</el-button>
       </div>
