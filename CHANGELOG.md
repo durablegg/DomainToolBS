@@ -1,5 +1,11 @@
 # CHANGELOG
 
+## [2026-11-11] 配置：测试环境容器开机自启（restart 策略）
+
+- **修改** `docker-compose.yml`：db / backend / frontend 三个服务统一加 `restart: unless-stopped`——Docker 守护进程随系统启动时自动拉起容器，解决测试虚拟机每次开机都要手动 `docker compose up -d` 的问题。
+- **原因** 测试环境 compose 未配置 restart 策略，重启虚拟机后容器不自启（生产 `docker-compose.prod.yml` 已有该策略，不受影响）。
+- **影响** 仅编排配置，不动代码与数据；生效需在服务器 `docker compose up -d` 重新应用，且 Docker 服务需开机自启（`sudo systemctl enable docker`）。数据库数据在 volume 中，容器重建不丢失。
+
 ## [2026-09-18] 文档：细化生产机离线装 Docker 命令
 
 - **更新** `docs/生产服务器离线部署指南.md` 第 1.2 节：把「完全离线装 Docker」从简述展开为精确命令——下载端加官方源 + 递归 `apt-get download` 抓全 deb → `tar` 携带 → 生产机 `dpkg -i` 安装，含依赖缺失处理与版本一致性提醒。
