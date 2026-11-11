@@ -1,0 +1,45 @@
+# 生产环境编排文件（离线镜像交付用）
+# 用法：docker compose -f docker-compose.prod.yml --env-file .env up -d
+# 与原 docker-compose.yml 的区别：去掉 build、改用固定镜像名、加开机自启。
+# 默认 docker compose up 不会读取本文件，必须显式 -f 指定，故不影响测试环境。
+
+services:
+  db:
+    image: postgres:16
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: domaintool
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-domaintool}
+      POSTGRES_DB: domaintool
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U domaintool"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    image: domaintoolbs-backend:1.0
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+psycopg://domaintool:${DB_PASSWORD:-domaintool}@db:5432/domaintool
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY}
+      FERNET_KEY: ${FERNET_KEY}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+    depends_on:
+      db:
+        condition: service_healthy
+    ports:
+      - "8000:8000"   # 仅本机/调试用，生产防火墙勿对外开
+
+  frontend:
+    image: domaintoolbs-frontend:1.0
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:

@@ -1,0 +1,31 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+
+# 环境变量与数据库
+backend/.env
+.env
+*.db
+*.sqlite3
+
+# Node
+node_modules/
+dist/
+*.local
+
+# IDE
+.idea/
+.vscode/
+
+# 日志
+*.log
+
+# 构建/部署产物（可由源码重新生成，不入库）
+deploy.tar.gz
+fe.tar.gz
+*.tar.gz
