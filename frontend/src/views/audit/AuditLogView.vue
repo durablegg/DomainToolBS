@@ -138,8 +138,8 @@ async function exportCsv() {
       params.start = `${filters.timeRange[0]}T00:00:00`
       params.end = `${filters.timeRange[1]}T23:59:59`
     }
-    const blob = await exportAuditLogs(params)
-    const url = window.URL.createObjectURL(new Blob([blob]))
+    const blob = (await exportAuditLogs(params)) as Blob
+    const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`
