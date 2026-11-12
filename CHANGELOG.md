@@ -1,5 +1,17 @@
 # CHANGELOG
 
+## [2026-11-12] 新增：OU删除友好报错、组策略GPO(3-1)、回收站
+
+- **优化** `backend/app/services/ad_ou.py`：`delete_ou` 删除前统计 OU 直接子对象；非空时抛出友好提示「该 OU 非空，包含 N 个子对象（OU/用户/组/计算机/其他），请先清空后再删除」，避免裸 LDAP 报错（保持 AD 安全策略，不提供强制删除）；删除失败（如「防止对象被意外删除」）也做汉化。
+- **新增 组策略 GPO（3-1：读取 + 绑定/解绑）**：
+  - `backend/app/services/ad_gpo.py` + `backend/app/api/v1/gpo.py`：列出域内 GPO（`CN=Policies` 元数据）；读取/写入 OU 的 `gPLink`/`gPOptions`（绑定、解绑、禁用、强制、阻止继承），纯 LDAP 实现。
+  - `frontend/src/views/gpo/GpoView.vue` + `frontend/src/api/gpo.ts`：新增左侧菜单「组策略 GPO」，GPO 列表页 + OU 关联管理（选 OU → 勾选绑定/禁用/强制 + 阻止继承 → 保存，审计记录）。
+- **新增 回收站**：
+  - `backend/app/services/ad_recyclebin.py` + `backend/app/api/v1/recyclebin.py`：检测域是否已启用 AD 回收站（`msDS-EnabledFeatureFlags` + 功能级别）；列出已删除对象（Show Deleted 控制位）；`modify_dn` 还原回原父容器；权限限超管/管理员（恢复进审计）。
+  - `frontend/src/views/recycle/RecycleBinView.vue` + `frontend/src/api/recyclebin.ts`：新增左侧菜单「回收站」（审计员可看列表），按类型筛选、恢复（恢复 OU 不级联子对象，UI 已提示）。
+- **原因** OU 误删报错不友好、缺少 GPO 与回收站的集中管理能力。
+- **影响** 无数据库 schema 变更；GPO/回收站均为实时读/写 AD + 复用审计表。生产更新：后端新增 2 个服务/路由文件（需整体重新构建后端镜像或 docker cp 后重启）+ 前端重新打包替换 dist + nginx reload。部署前请在测试域控确认功能级别 ≥ 2008 R2 并已启用回收站（一次性不可逆）。
+
 ## [2026-11-11] 修复+新增：批量导入OU级联、新建用户重置、审计日志导出
 
 - **修复** `frontend/src/views/batch/BatchView.vue`：批量导入「选择导入目标 OU」由平铺 `el-select` 改为 `el-tree-select`，复用已有 OU 树（`sub_ous`），支持展开选择子 OU（如「踏浪第一事业部 → 子OU」）。
