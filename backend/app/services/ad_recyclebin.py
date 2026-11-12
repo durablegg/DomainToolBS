@@ -6,6 +6,8 @@ import re
 from ldap3 import BASE, MODIFY_DELETE, MODIFY_REPLACE, SUBTREE
 from ldap3.core.exceptions import LDAPException
 
+from . import ad_utils
+
 logger = logging.getLogger(__name__)
 
 # 显示已删除对象（含回收站对象）所需的 LDAP 控制位
@@ -41,10 +43,10 @@ def _attr_list(entry, name: str) -> list[str]:
 
 
 def _fmt_time(raw: str) -> str:
-    """LDAP 时间 20260615110914.0Z -> 2026-06-15 11:09；无法解析时原样返回。"""
-    m = re.match(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})", raw or "")
-    if m:
-        return f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}"
+    """LDAP 时间 20260615110914.0Z -> 北京时间 "2026-06-15 19:09"；无法解析时原样返回。"""
+    dt = ad_utils.parse_generalized(raw)
+    if dt:
+        return dt.strftime("%Y-%m-%d %H:%M")
     return raw or ""
 
 

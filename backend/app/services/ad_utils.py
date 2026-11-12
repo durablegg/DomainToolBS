@@ -1,7 +1,21 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from ldap3 import SUBTREE
+
+# LDAP 时间值（GeneralizedTime / FILETIME）一律为 UTC，而容器/服务器多以 UTC 运行；
+# 展示统一转成北京时间（UTC+8，无夏令时，用固定偏移即可）。转完去掉 tzinfo，
+# 使序列化/字符串化输出形如 "2026-11-12 22:59:36"，前端直接显示。
+_TZ_CN = timezone(timedelta(hours=8))
+
+
+def to_local(dt: datetime | None) -> datetime | None:
+    """UTC 时间转北京时间并去掉 tzinfo；naive 输入视为 UTC。"""
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(_TZ_CN).replace(tzinfo=None)
 
 # userAccountControl 标志位
 UAC_ACCOUNT_DISABLE = 0x0002
@@ -78,17 +92,17 @@ def filetime_to_dt(value):
     if ft in (0, _NEVER):
         return None
     ts = ft / 10_000_000 - _EPOCH_DELTA
-    return datetime.fromtimestamp(ts, tz=timezone.utc)
+    return to_local(datetime.fromtimestamp(ts, tz=timezone.utc))
 
 
 def parse_generalized(value):
     if value is None:
         return None
     if isinstance(value, datetime):
-        return value
+        return to_local(value)
     try:
         s = str(value).replace("Z", "").replace(".0", "")
-        return datetime.strptime(s, "%Y%m%d%H%M%S")
+        return to_local(datetime.strptime(s, "%Y%m%d%H%M%S"))
     except Exception:
         return None
 
