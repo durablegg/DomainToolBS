@@ -50,13 +50,7 @@ def _object_type(classes: list[str]) -> str:
 
 def status(conn, base_dn: str) -> dict:
     """检测域是否启用 AD 回收站与功能级别；任何属性读不到都降级而不是报错。"""
-    ok = _safe_search(
-        conn,
-        base_dn,
-        "(objectClass=*)",
-        BASE,
-        attributes=["msDS-EnabledFeatureFlags", "msDS-Behavior-Version"],
-    )
+    ok = _safe_search(conn, base_dn, "(objectClass=*)", BASE, attributes=["*"])
     entry = conn.entries[0] if (ok and conn.entries) else None
     if entry is None:
         ok = _safe_search(
@@ -99,9 +93,9 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
     """列出已删除对象；属性缺失时逐级降级属性集，字段全部用 raw_attributes 安全读取。"""
     base = deleted_objects_dn(base_dn)
     attempts = [
-        ["msDS-LastKnownRDN", "lastKnownParent", "whenDeleted", "objectClass"],
-        ["msDS-LastKnownRDN", "lastKnownParent", "objectClass"],
-        ["objectClass"],
+        ["*"],
+        ["msDS-LastKnownRDN", "lastKnownParent", "whenDeleted", "objectClass", "cn"],
+        ["objectClass", "cn"],
     ]
     entries = None
     for attrs in attempts:
@@ -137,13 +131,17 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
 def restore_object(conn, deleted_dn: str) -> dict:
     """将回收站中的对象还原回其原父容器（OU 的子对象不会一起还原，需逐个恢复）。"""
     ok = _safe_search(
-        conn,
-        deleted_dn,
-        "(objectClass=*)",
-        BASE,
-        attributes=["msDS-LastKnownRDN", "lastKnownParent"],
-        controls=[SHOW_DELETED],
+        conn, deleted_dn, "(objectClass=*)", BASE, attributes=["*"], controls=[SHOW_DELETED]
     )
+    if not ok or not conn.entries:
+        ok = _safe_search(
+            conn,
+            deleted_dn,
+            "(objectClass=*)",
+            BASE,
+            attributes=["msDS-LastKnownRDN", "lastKnownParent"],
+            controls=[SHOW_DELETED],
+        )
     entry = conn.entries[0] if (ok and conn.entries) else None
     if entry is None:
         raise RuntimeError("未找到该已删除对象，可能已被物理清除，或当前域控不支持读取其还原属性")
