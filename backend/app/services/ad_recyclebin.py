@@ -78,6 +78,18 @@ def status(conn, base_dn: str) -> dict:
     """检测域是否启用 AD 回收站与功能级别；任何属性读不到都降级而不是报错。"""
     ok = _safe_search(conn, base_dn, "(objectClass=*)", BASE, attributes=["*"])
     entry = conn.entries[0] if (ok and conn.entries) else None
+    if entry is None or "msds-enabledfeatureflags" not in (entry.entry_raw_attributes or {}):
+        # 部分 DC 不随 '*' 返回该属性，显式指名请求（check_names 已关闭，可安全指名）
+        ok2 = _safe_search(
+            conn,
+            base_dn,
+            "(objectClass=*)",
+            BASE,
+            attributes=["msDS-EnabledFeatureFlags", "msDS-Behavior-Version"],
+        )
+        e2 = conn.entries[0] if (ok2 and conn.entries) else None
+        if e2 is not None:
+            entry = e2
     if entry is None:
         ok = _safe_search(
             conn, base_dn, "(objectClass=*)", BASE, attributes=["msDS-Behavior-Version"]
