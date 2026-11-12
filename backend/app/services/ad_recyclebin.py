@@ -220,12 +220,28 @@ def restore_object(conn, deleted_dn: str) -> dict:
     parent = _attr(entry, "lastknownparent")
     if not rdn or not parent:
         raise RuntimeError("缺少原 RDN 或原父容器，无法还原（可能已超期被物理删除）")
+    if _attr(entry, "isrecycled").upper() == "TRUE":
+        raise RuntimeError("该对象已进入 Recycled 状态（超过可恢复保留期），无法再恢复，只能等 AD 物理清除")
     if "=" not in rdn:
         # msDS-LastKnownRDN 只含 RDN 值（如 test66），modify_dn 需要完整 RDN（如 CN=test66）；
         # 属性类型从对象自身 DN 的第一段取（CN/OU）
         first_seg = (deleted_dn or "").split(",")[0]
         rdn_type = first_seg.split("=", 1)[0] if "=" in first_seg else "CN"
         rdn = f"{rdn_type}={rdn}"
+    logger.info("recyclebin restore: dn=%s rdn=%s parent=%s", deleted_dn, rdn, parent)
     if not conn.modify_dn(deleted_dn, rdn, new_superior=parent, controls=[SHOW_DELETED]):
+        logger.warning("recyclebin restore failed: %s", conn.result)
+        # 定位 WILL_NOT_PERFORM 的常见原因，给出可操作的提示
+        ok_p = _safe_search(conn, parent, "(objectClass=*)", BASE, attributes=["objectClass"])
+        if not (ok_p and conn.entries):
+            raise RuntimeError(
+                f"原父容器 {parent} 当前不存在（可能也已被删除），请先在回收站恢复父容器，再还原该对象"
+            )
+        atype, _, aval = rdn.partition("=")
+        ok_c = _safe_search(conn, parent, f"({atype}={aval})", BASE, attributes=["cn"])
+        if ok_c and conn.entries:
+            raise RuntimeError(
+                f"父容器 {parent} 下已存在同名对象 {rdn}，请先重命名或移除同名对象后再恢复"
+            )
         raise RuntimeError(f"还原失败: {conn.result}")
     return {"ok": True, "dn": deleted_dn}
