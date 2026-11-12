@@ -106,10 +106,24 @@ def status(conn, base_dn: str) -> dict:
 
     flags_raw = _attr(entry, "msds-enabledfeatureflags") if entry else ""
     flags_known = flags_raw != ""
-    try:
-        enabled = bool(int(flags_raw) & 1) if flags_known else False
-    except ValueError:
-        enabled = False
+    enabled = False
+    if flags_known:
+        try:
+            enabled = bool(int(flags_raw) & 1)
+        except ValueError:
+            enabled = False
+    if not flags_known:
+        # 终极兜底：查 Configuration 分区的可选功能对象（林级复制，任何 DC 都能查到），
+        # Get-ADOptionalFeature 的 EnabledScopes 读的就是它的 msDS-EnabledFeatureBL
+        feature_dn = (
+            "CN=Recycle Bin Feature,CN=Optional Features,CN=Directory Service,"
+            f"CN=Windows NT,CN=Services,CN=Configuration,{base_dn}"
+        )
+        ok3 = _safe_search(conn, feature_dn, "(objectClass=*)", BASE, attributes=["msDS-EnabledFeatureBL"])
+        e3 = conn.entries[0] if (ok3 and conn.entries) else None
+        if e3 and _attr_list(e3, "msds-enabledfeaturebl"):
+            enabled = True
+            flags_known = True
 
     behavior_raw = _attr(entry, "msds-behavior-version") if entry else ""
     behavior_known = behavior_raw != ""
