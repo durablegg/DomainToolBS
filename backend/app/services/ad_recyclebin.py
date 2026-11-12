@@ -24,49 +24,87 @@ def _object_type(classes) -> str:
 
 
 def status(conn, base_dn: str) -> dict:
-    """检测域是否启用 AD 回收站（msDS-EnabledFeatureFlags 置位）与功能级别是否达标。"""
-    conn.search(
+    """检测域是否启用 AD 回收站与功能级别；旧 schema 缺属性时降级而不是报错。"""
+    enabled = False
+    behavior = 0
+    flags_known = False
+
+    ok = conn.search(
         base_dn,
         "(objectClass=*)",
-        SUBTREE,
+        BASE,
         attributes=["msDS-EnabledFeatureFlags", "msDS-Behavior-Version"],
     )
-    entry = conn.entries[0] if conn.entries else None
-    flags = 0
-    behavior = 0
-    if entry:
-        if entry.msDS_EnabledFeatureFlags:
-            try:
-                flags = int(entry.msDS_EnabledFeatureFlags.value)
-            except (TypeError, ValueError):
-                flags = 0
-        if entry.msDS_Behavior_Version:
-            try:
-                behavior = int(entry.msDS_Behavior_Version.value)
-            except (TypeError, ValueError):
-                behavior = 0
-    enabled = bool(flags & 1)
-    level_ok = behavior >= 4  # Windows Server 2008 R2 及以上
-    if enabled and level_ok:
-        message = ""
-    elif not level_ok:
-        message = "域功能级别低于 Windows Server 2008 R2，无法启用回收站；请先提升林/域功能级别"
+    entry = conn.entries[0] if (ok and conn.entries) else None
+    if entry is not None and entry.msDS_EnabledFeatureFlags:
+        flags_known = True
+        try:
+            enabled = bool(int(entry.msDS_EnabledFeatureFlags.value) & 1)
+        except (TypeError, ValueError):
+            enabled = False
     else:
-        message = "域尚未启用回收站（一次性、不可逆）。请先在 AD 管理中心或 PowerShell 启用后再使用恢复功能"
+        # msDS-EnabledFeatureFlags 不在 schema 中（域较旧或未扩展）：回收站必然未启用
+        ok = conn.search(
+            base_dn, "(objectClass=*)", BASE, attributes=["msDS-Behavior-Version"]
+        )
+        entry = conn.entries[0] if (ok and conn.entries) else None
+
+    if entry is not None and entry.msDS_Behavior_Version:
+        try:
+            behavior = int(entry.msDS_Behavior_Version.value)
+        except (TypeError, ValueError):
+            behavior = 0
+
+    level_ok = behavior >= 4  # Windows Server 2008 R2 及以上
+    if not level_ok:
+        message = "域功能级别低于 Windows Server 2008 R2，无法启用回收站；请先提升林/域功能级别"
+    elif not enabled:
+        message = (
+            "域尚未启用回收站（一次性、不可逆）。请先在 AD 管理中心或 PowerShell 启用后再使用恢复功能："
+            "Enable-ADOptionalFeature 'Recycle Bin Feature' -Scope ForestOrConfigurationSet -Target <林FQDN>"
+        )
+    elif not flags_known:
+        message = "无法确认回收站启用状态（域 schema 较旧），默认按未启用处理"
+    else:
+        message = ""
     return {"enabled": enabled, "functional_level_sufficient": level_ok, "message": message}
 
 
 def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
-    conn.search(
-        deleted_objects_dn(base_dn),
+    """列出已删除对象；旧 schema 缺属性时逐级降级属性集。"""
+    base = deleted_objects_dn(base_dn)
+    ok = conn.search(
+        base,
         "(isDeleted=TRUE)",
         SUBTREE,
         attributes=["msDS-LastKnownRDN", "lastKnownParent", "whenDeleted", "objectClass"],
         controls=[SHOW_DELETED],
     )
+    if not ok:
+        ok = conn.search(
+            base,
+            "(isDeleted=TRUE)",
+            SUBTREE,
+            attributes=["msDS-LastKnownRDN", "lastKnownParent", "objectClass"],
+            controls=[SHOW_DELETED],
+        )
+    if not ok:
+        ok = conn.search(
+            base,
+            "(isDeleted=TRUE)",
+            SUBTREE,
+            attributes=["objectClass"],
+            controls=[SHOW_DELETED],
+        )
+    if not ok:
+        raise RuntimeError(f"读取已删除对象失败: {conn.result}")
+
     items: list[dict] = []
     for e in conn.entries:
         rdn = str(e.msDS_LastKnownRDN.value) if e.msDS_LastKnownRDN else ""
+        if not rdn and e.cn:
+            # 兜底：已删除对象的 cn 形如 "名称\nDEL:GUID"，取第一段
+            rdn = str(e.cn.value).split("\n")[0]
         name = rdn.split("=", 1)[-1] if "=" in rdn else rdn
         otype = _object_type(e.objectClass.value if e.objectClass else [])
         if object_type and otype != object_type:
@@ -86,14 +124,14 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
 
 def restore_object(conn, deleted_dn: str) -> dict:
     """将回收站中的对象还原回其原父容器（OU 的子对象不会一起还原，需逐个恢复）。"""
-    conn.search(
+    ok = conn.search(
         deleted_dn,
         "(objectClass=*)",
         BASE,
         attributes=["msDS-LastKnownRDN", "lastKnownParent"],
         controls=[SHOW_DELETED],
     )
-    entry = conn.entries[0] if conn.entries else None
+    entry = conn.entries[0] if (ok and conn.entries) else None
     if not entry:
         raise RuntimeError("未找到该已删除对象，可能已被物理清除")
     rdn = str(entry.msDS_LastKnownRDN.value) if entry.msDS_LastKnownRDN else ""

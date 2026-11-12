@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from ldap3 import MODIFY_REPLACE, SUBTREE
 
 
@@ -19,7 +21,7 @@ def list_gpos(conn, base_dn: str) -> list[dict]:
     for e in conn.entries:
         items.append(
             {
-                "guid": str(e.cn.value) if e.cn else "",
+                "guid": (str(e.cn.value).strip("{}") if e.cn else ""),
                 "display_name": str(e.displayName.value) if e.displayName else (str(e.cn.value) if e.cn else ""),
                 "when_changed": str(e.whenChanged.value) if e.whenChanged else "",
                 "description": str(e.description.value) if e.description else "",
@@ -42,7 +44,9 @@ def _parse_gplink(gplink: str) -> list[dict]:
         if "LDAP://" not in raw:
             continue
         dn, _, flag = raw.rpartition(";")
-        guid = dn.rstrip("/").split("=")[-1].strip("{}")
+        # GUID 一定是 {xxx} 形式；不能按 "=" 切最后一段（那是 DC=com）
+        m = re.search(r"\{([^}]+)\}", dn)
+        guid = m.group(1) if m else dn.replace("LDAP://", "")
         flag = (flag or "0").strip()
         enforced = flag == "2"
         disabled = flag == "1"
