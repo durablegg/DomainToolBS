@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import re
+
 from ldap3 import BASE, SUBTREE
 from ldap3.core.exceptions import LDAPException
 
@@ -33,6 +35,14 @@ def _attr(entry, name: str) -> str:
 def _attr_list(entry, name: str) -> list[str]:
     vals = (entry.entry_raw_attributes or {}).get(name.lower()) or []
     return [v.decode("utf-8", "ignore") if isinstance(v, bytes) else str(v) for v in vals]
+
+
+def _fmt_time(raw: str) -> str:
+    """LDAP 时间 20260615110914.0Z -> 2026-06-15 11:09；无法解析时原样返回。"""
+    m = re.match(r"^(\d{4})(\d{2})(\d{2})(\d{2})(\d{2})(\d{2})", raw or "")
+    if m:
+        return f"{m.group(1)}-{m.group(2)}-{m.group(3)} {m.group(4)}:{m.group(5)}"
+    return raw or ""
 
 
 def _object_type(classes: list[str]) -> str:
@@ -125,10 +135,12 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
                 "last_known_rdn": rdn,
                 "parent": _attr(e, "lastknownparent"),
                 # 域控不返回 whenDeleted 时用 whenChanged 兜底（tombstone 的修改时间≈删除时间）
-                "when_deleted": _attr(e, "whendeleted") or _attr(e, "whenchanged"),
+                "when_deleted": _fmt_time(_attr(e, "whendeleted") or _attr(e, "whenchanged")),
                 "object_type": otype,
             }
         )
+    # 最新删除的排在最前面
+    items.sort(key=lambda x: x["when_deleted"], reverse=True)
     return items
 
 
