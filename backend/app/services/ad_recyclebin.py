@@ -229,9 +229,33 @@ def restore_object(conn, deleted_dn: str) -> dict:
         rdn_type = first_seg.split("=", 1)[0] if "=" in first_seg else "CN"
         rdn = f"{rdn_type}={rdn}"
     logger.info("recyclebin restore: dn=%s rdn=%s parent=%s", deleted_dn, rdn, parent)
-    if not conn.modify_dn(deleted_dn, rdn, new_superior=parent, controls=[SHOW_DELETED]):
-        logger.warning("recyclebin restore failed: %s", conn.result)
-        # 定位 WILL_NOT_PERFORM 的常见原因，给出可操作的提示
+    relax = ("1.2.840.113556.1.4.2239", True, None)  # Relax Rule：放宽 AD 约束
+    last_res = None
+    done = False
+    for ctrls, del_old in (
+        ([SHOW_DELETED], True),
+        ([SHOW_DELETED], False),
+        ([SHOW_DELETED, relax], True),
+        ([SHOW_DELETED, relax], False),
+    ):
+        ok_m = bool(
+            conn.modify_dn(
+                deleted_dn, rdn, delete_old_dn=del_old, new_superior=parent, controls=ctrls
+            )
+        )
+        last_res = conn.result
+        logger.warning(
+            "recyclebin restore attempt(del_old=%s relax=%s) -> %s",
+            del_old,
+            relax in ctrls,
+            last_res,
+        )
+        if ok_m:
+            done = True
+            break
+    if not done:
+        # 定位 WILL_NOT_PERFORM 的常见原因，给出可操作的提示（注意：这些诊断查询会覆盖
+        # conn.result，因此报错信息使用上面捕获的 last_res，而不是当前的 conn.result）
         ok_p = _safe_search(conn, parent, "(objectClass=*)", BASE, attributes=["objectClass"])
         if not (ok_p and conn.entries):
             raise RuntimeError(
@@ -243,5 +267,5 @@ def restore_object(conn, deleted_dn: str) -> dict:
             raise RuntimeError(
                 f"父容器 {parent} 下已存在同名对象 {rdn}，请先重命名或移除同名对象后再恢复"
             )
-        raise RuntimeError(f"还原失败: {conn.result}")
+        raise RuntimeError(f"还原失败: {last_res}")
     return {"ok": True, "dn": deleted_dn}
