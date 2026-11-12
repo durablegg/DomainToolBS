@@ -82,7 +82,7 @@ import { encodeDN } from '@/utils/dn'
 
 const domainStore = useDomainStore()
 const userStore = useUserStore()
-const domainId = computed(() => domainStore.currentDomainId)
+const domainId = computed(() => domainStore.currentDomainId ?? 0)
 const writable = computed(() => canWrite(userStore.user?.role))
 
 const tab = ref('list')
