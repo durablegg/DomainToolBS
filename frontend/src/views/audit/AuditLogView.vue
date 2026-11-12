@@ -32,6 +32,7 @@
       </el-form-item>
       <el-form-item>
         <el-button type="primary" @click="refresh">查询</el-button>
+        <el-button @click="resetQuery">重置</el-button>
         <el-button @click="exportCsv" :loading="exporting">导出 CSV</el-button>
       </el-form-item>
     </el-form>
@@ -105,6 +106,17 @@ const exporting = ref(false)
 const detailVisible = ref(false)
 const current = ref<AuditLog | null>(null)
 
+function resetQuery() {
+  filters.action = ''
+  filters.object_type = ''
+  filters.operator = ''
+  filters.keyword = ''
+  filters.domain_id = null
+  filters.timeRange = null
+  page.value = 1
+  refresh()
+}
+
 async function refresh() {
   loading.value = true
   try {
@@ -138,8 +150,8 @@ async function exportCsv() {
       params.start = `${filters.timeRange[0]}T00:00:00`
       params.end = `${filters.timeRange[1]}T23:59:59`
     }
-    const blob = await exportAuditLogs(params)
-    const url = window.URL.createObjectURL(new Blob([blob]))
+    const blob = (await exportAuditLogs(params)) as Blob
+    const url = window.URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url
     a.download = `audit_logs_${new Date().toISOString().slice(0, 10)}.csv`
