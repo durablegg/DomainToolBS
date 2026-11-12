@@ -3,7 +3,7 @@ from __future__ import annotations
 import logging
 import re
 
-from ldap3 import BASE, SUBTREE
+from ldap3 import BASE, MODIFY_DELETE, MODIFY_REPLACE, SUBTREE
 from ldap3.core.exceptions import LDAPException
 
 logger = logging.getLogger(__name__)
@@ -229,30 +229,47 @@ def restore_object(conn, deleted_dn: str) -> dict:
         rdn_type = first_seg.split("=", 1)[0] if "=" in first_seg else "CN"
         rdn = f"{rdn_type}={rdn}"
     logger.info("recyclebin restore: dn=%s rdn=%s parent=%s", deleted_dn, rdn, parent)
-    relax = ("1.2.840.113556.1.4.2239", True, None)  # Relax Rule：放宽 AD 约束
+    new_dn = f"{rdn},{parent}"
     last_res = None
     done = False
-    for ctrls, del_old in (
-        ([SHOW_DELETED], True),
-        ([SHOW_DELETED], False),
-        ([SHOW_DELETED, relax], True),
-        ([SHOW_DELETED, relax], False),
-    ):
+    # 方式1（协议标准，MS-ADTS 3.1.1.5.3.7）：modify 操作，REMOVE isDeleted + REPLACE
+    # distinguishedName(新DN)，两者必须同时存在，服务器识别该组合后在一个事务内完成"复活+搬家"
+    try:
         ok_m = bool(
-            conn.modify_dn(
-                deleted_dn, rdn, delete_old_dn=del_old, new_superior=parent, controls=ctrls
+            conn.modify(
+                deleted_dn,
+                {
+                    "isDeleted": [(MODIFY_DELETE, [])],
+                    "distinguishedName": [(MODIFY_REPLACE, [new_dn])],
+                },
+                controls=[SHOW_DELETED],
             )
         )
-        last_res = conn.result
-        logger.warning(
-            "recyclebin restore attempt(del_old=%s relax=%s) -> %s",
-            del_old,
-            relax in ctrls,
-            last_res,
-        )
-        if ok_m:
-            done = True
-            break
+    except LDAPException:
+        ok_m = False
+    last_res = conn.result
+    logger.warning("recyclebin restore attempt(modify-undelete) -> %s", last_res)
+    if ok_m:
+        done = True
+    else:
+        # 方式2（兜底）：modify DN 恢复（部分环境支持）
+        for del_old in (True, False):
+            ok_m = bool(
+                conn.modify_dn(
+                    deleted_dn,
+                    rdn,
+                    delete_old_dn=del_old,
+                    new_superior=parent,
+                    controls=[SHOW_DELETED],
+                )
+            )
+            last_res = conn.result
+            logger.warning(
+                "recyclebin restore attempt(modDN del_old=%s) -> %s", del_old, last_res
+            )
+            if ok_m:
+                done = True
+                break
     if not done:
         # 定位 WILL_NOT_PERFORM 的常见原因，给出可操作的提示（注意：这些诊断查询会覆盖
         # conn.result，因此报错信息使用上面捕获的 last_res，而不是当前的 conn.result）
