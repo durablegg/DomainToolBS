@@ -45,6 +45,19 @@ def _fmt_time(raw: str) -> str:
     return raw or ""
 
 
+def _name_from_dn(dn: str) -> str:
+    """从对象自身的 DN 解析原名：tombstone 的 RDN 形如 "原名\\n0ADEL:GUID"，
+    取第一段；OU 没有 cn 属性时靠这个兜底。"""
+    if not dn:
+        return ""
+    first = dn.split(",")[0]
+    if "=" in first:
+        first = first.split("=", 1)[1]
+    # 去掉 tombstone 标记（\n0ADEL:guid / 0ADEL:guid / \nDEL:guid）
+    first = re.split(r"[\n\\{}]*(?:0)?DEL:", first)[0]
+    return first.strip()
+
+
 def _object_type(classes: list[str]) -> str:
     s = {c.lower() for c in classes}
     if "organizationalunit" in s:
@@ -122,8 +135,11 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
             continue  # 跳过 Deleted Objects 容器自身
         rdn = _attr(e, "msds-lastknownrdn")
         if not rdn:
-            # 兜底：已删除对象的 cn 形如 "名称\nDEL:GUID"，取第一段
+            # 兜底 1：已删除对象的 cn 形如 "名称\nDEL:GUID"，取第一段
             rdn = _attr(e, "cn").split("\n")[0]
+        if not rdn:
+            # 兜底 2：OU 没有 cn，从对象自身 DN 解析原名
+            rdn = _name_from_dn(dn)
         name = rdn.split("=", 1)[-1] if "=" in rdn else rdn
         otype = _object_type(_attr_list(e, "objectclass"))
         if object_type and otype != object_type:
