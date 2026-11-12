@@ -56,8 +56,13 @@ def get_connection(
 ) -> Connection:
     server, ca_path = _build_server(host, port, use_ssl, ca_cert)
     try:
+        # check_names=False：关闭 ldap3 客户端属性名校验。
+        # 旧 schema 域控缺少部分属性（如 msDS-EnabledFeatureFlags）时，客户端校验会直接抛
+        # LDAPInvalidAttributeError/LDAPKeyError；服务端本身能优雅忽略缺失属性，关掉后
+        # 请求什么返回什么，由各服务自行兜底。
         return Connection(
-            server, user=bind_dn, password=password, authentication=SIMPLE, auto_bind=True
+            server, user=bind_dn, password=password, authentication=SIMPLE, auto_bind=True,
+            check_names=False,
         )
     finally:
         _cleanup_ca(ca_path)

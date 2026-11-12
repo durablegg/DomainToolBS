@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 import re
 
 from ldap3 import BASE, SUBTREE
 from ldap3.core.exceptions import LDAPException
+
+logger = logging.getLogger(__name__)
 
 # 显示已删除对象（含回收站对象）所需的 LDAP 控制位
 SHOW_DELETED = ("1.2.840.113556.1.4.417", True, None)
@@ -80,6 +83,14 @@ def status(conn, base_dn: str) -> dict:
             conn, base_dn, "(objectClass=*)", BASE, attributes=["msDS-Behavior-Version"]
         )
         entry = conn.entries[0] if (ok and conn.entries) else None
+    if entry is not None:
+        logger.info(
+            "recyclebin status: base=%s attrs=%s",
+            base_dn,
+            sorted(entry.entry_raw_attributes.keys()),
+        )
+    else:
+        logger.warning("recyclebin status: 域头查询失败 ok=%s result=%s", ok, conn.result)
 
     flags_raw = _attr(entry, "msds-enabledfeatureflags") if entry else ""
     flags_known = flags_raw != ""
@@ -121,8 +132,10 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
         ["objectClass", "cn", "whenChanged"],
     ]
     entries = None
-    for attrs in attempts:
-        if _safe_search(conn, base, "(isDeleted=TRUE)", SUBTREE, attributes=attrs, controls=[SHOW_DELETED]):
+    for i, attrs in enumerate(attempts):
+        ok = _safe_search(conn, base, "(isDeleted=TRUE)", SUBTREE, attributes=attrs, controls=[SHOW_DELETED])
+        logger.info("recyclebin list_deleted: attempt=%s attrs=%s ok=%s n=%s", i, attrs, ok, len(conn.entries) if ok else "-")
+        if ok:
             entries = conn.entries
             break
     if entries is None:
