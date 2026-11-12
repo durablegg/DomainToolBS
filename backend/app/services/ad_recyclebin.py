@@ -220,6 +220,12 @@ def restore_object(conn, deleted_dn: str) -> dict:
     parent = _attr(entry, "lastknownparent")
     if not rdn or not parent:
         raise RuntimeError("缺少原 RDN 或原父容器，无法还原（可能已超期被物理删除）")
+    if "=" not in rdn:
+        # msDS-LastKnownRDN 只含 RDN 值（如 test66），modify_dn 需要完整 RDN（如 CN=test66）；
+        # 属性类型从对象自身 DN 的第一段取（CN/OU）
+        first_seg = (deleted_dn or "").split(",")[0]
+        rdn_type = first_seg.split("=", 1)[0] if "=" in first_seg else "CN"
+        rdn = f"{rdn_type}={rdn}"
     if not conn.modify_dn(deleted_dn, rdn, new_superior=parent, controls=[SHOW_DELETED]):
         raise RuntimeError(f"还原失败: {conn.result}")
     return {"ok": True, "dn": deleted_dn}
