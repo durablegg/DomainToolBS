@@ -21,8 +21,9 @@ def _safe_search(conn, *args, **kwargs) -> bool:
 
 
 def _attr(entry, name: str) -> str:
-    """安全读取单值属性：服务器未返回该属性时返回空串，绝不抛异常。"""
-    vals = entry.raw_attributes.get(name) or []
+    """安全读取单值属性：服务器未返回该属性时返回空串，绝不抛异常。
+    ldap3 Entry 的原始属性字典叫 entry_raw_attributes（键为小写）。"""
+    vals = (entry.entry_raw_attributes or {}).get(name.lower()) or []
     v = vals[0] if vals else ""
     if isinstance(v, bytes):
         return v.decode("utf-8", "ignore")
@@ -30,7 +31,7 @@ def _attr(entry, name: str) -> str:
 
 
 def _attr_list(entry, name: str) -> list[str]:
-    vals = entry.raw_attributes.get(name) or []
+    vals = (entry.entry_raw_attributes or {}).get(name.lower()) or []
     return [v.decode("utf-8", "ignore") if isinstance(v, bytes) else str(v) for v in vals]
 
 
