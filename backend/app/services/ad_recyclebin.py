@@ -94,8 +94,8 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
     base = deleted_objects_dn(base_dn)
     attempts = [
         ["*"],
-        ["msDS-LastKnownRDN", "lastKnownParent", "whenDeleted", "objectClass", "cn"],
-        ["objectClass", "cn"],
+        ["msDS-LastKnownRDN", "lastKnownParent", "whenDeleted", "whenChanged", "objectClass", "cn"],
+        ["objectClass", "cn", "whenChanged"],
     ]
     entries = None
     for attrs in attempts:
@@ -107,6 +107,9 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
 
     items: list[dict] = []
     for e in entries:
+        dn = e.entry_dn or ""
+        if dn.lower() == base.lower():
+            continue  # 跳过 Deleted Objects 容器自身
         rdn = _attr(e, "msds-lastknownrdn")
         if not rdn:
             # 兜底：已删除对象的 cn 形如 "名称\nDEL:GUID"，取第一段
@@ -117,11 +120,12 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
             continue
         items.append(
             {
-                "dn": e.entry_dn,
+                "dn": dn,
                 "name": name,
                 "last_known_rdn": rdn,
                 "parent": _attr(e, "lastknownparent"),
-                "when_deleted": _attr(e, "whendeleted"),
+                # 域控不返回 whenDeleted 时用 whenChanged 兜底（tombstone 的修改时间≈删除时间）
+                "when_deleted": _attr(e, "whendeleted") or _attr(e, "whenchanged"),
                 "object_type": otype,
             }
         )

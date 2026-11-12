@@ -29,7 +29,7 @@
       <el-button type="primary" :loading="loading" @click="load">刷新</el-button>
     </div>
 
-    <el-table :data="items" v-loading="loading" stripe>
+    <el-table :data="pagedItems" v-loading="loading" stripe>
       <el-table-column prop="name" label="原名称" min-width="160" />
       <el-table-column label="类型" width="90">
         <template #default="{ row }">{{ typeLabel(row.object_type) }}</template>
@@ -42,6 +42,14 @@
         </template>
       </el-table-column>
     </el-table>
+    <div style="display: flex; justify-content: flex-end; margin-top: 12px">
+      <el-pagination
+        v-model:current-page="page"
+        :page-size="pageSize"
+        :total="items.length"
+        layout="total, prev, pager, next"
+      />
+    </div>
     <el-alert
       type="info"
       :closable="false"
@@ -70,6 +78,9 @@ const typeFilter = ref('')
 const items = ref<DeletedItem[]>([])
 const loading = ref(false)
 const status = ref<{ enabled: boolean; functional_level_sufficient: boolean; message: string } | null>(null)
+const page = ref(1)
+const pageSize = ref(20)
+const pagedItems = computed(() => items.value.slice((page.value - 1) * pageSize.value, page.value * pageSize.value))
 
 const TYPE_LABELS: Record<DelType, string> = {
   user: '用户',
@@ -85,6 +96,7 @@ function typeLabel(t: DelType) {
 async function load() {
   if (!domainId.value) return
   loading.value = true
+  page.value = 1
   try {
     const [st, list] = await Promise.all([
       getRecycleStatus(domainId.value),
