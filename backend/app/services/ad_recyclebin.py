@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ldap3 import BASE, SUBTREE
+from ldap3.core.exceptions import LDAPException
 
 # 显示已删除对象（含回收站对象）所需的 LDAP 控制位
 SHOW_DELETED = ("1.2.840.113556.1.4.417", True, None)
@@ -8,6 +9,15 @@ SHOW_DELETED = ("1.2.840.113556.1.4.417", True, None)
 
 def deleted_objects_dn(base_dn: str) -> str:
     return f"CN=Deleted Objects,{base_dn}"
+
+
+def _safe_search(conn, *args, **kwargs) -> bool:
+    """ldap3 默认 check_names=True 会在客户端校验属性名，schema 缺属性时直接抛异常；
+    这里统一捕获，让上层降级逻辑有机会执行。"""
+    try:
+        return bool(conn.search(*args, **kwargs))
+    except LDAPException:
+        return False
 
 
 def _object_type(classes) -> str:
@@ -29,7 +39,7 @@ def status(conn, base_dn: str) -> dict:
     behavior = 0
     flags_known = False
 
-    ok = conn.search(
+    ok = _safe_search(conn,
         base_dn,
         "(objectClass=*)",
         BASE,
@@ -44,7 +54,7 @@ def status(conn, base_dn: str) -> dict:
             enabled = False
     else:
         # msDS-EnabledFeatureFlags 不在 schema 中（域较旧或未扩展）：回收站必然未启用
-        ok = conn.search(
+        ok = _safe_search(conn,
             base_dn, "(objectClass=*)", BASE, attributes=["msDS-Behavior-Version"]
         )
         entry = conn.entries[0] if (ok and conn.entries) else None
@@ -73,7 +83,7 @@ def status(conn, base_dn: str) -> dict:
 def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
     """列出已删除对象；旧 schema 缺属性时逐级降级属性集。"""
     base = deleted_objects_dn(base_dn)
-    ok = conn.search(
+    ok = _safe_search(conn,
         base,
         "(isDeleted=TRUE)",
         SUBTREE,
@@ -81,7 +91,7 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
         controls=[SHOW_DELETED],
     )
     if not ok:
-        ok = conn.search(
+        ok = _safe_search(conn,
             base,
             "(isDeleted=TRUE)",
             SUBTREE,
@@ -89,7 +99,7 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
             controls=[SHOW_DELETED],
         )
     if not ok:
-        ok = conn.search(
+        ok = _safe_search(conn,
             base,
             "(isDeleted=TRUE)",
             SUBTREE,
@@ -124,7 +134,7 @@ def list_deleted(conn, base_dn: str, object_type: str = "") -> list[dict]:
 
 def restore_object(conn, deleted_dn: str) -> dict:
     """将回收站中的对象还原回其原父容器（OU 的子对象不会一起还原，需逐个恢复）。"""
-    ok = conn.search(
+    ok = _safe_search(conn,
         deleted_dn,
         "(objectClass=*)",
         BASE,
