@@ -28,16 +28,25 @@
           <div class="toolbar">
             <span>阻止继承：</span>
             <el-switch v-model="blockInheritance" :disabled="!writable" />
-            <el-select
+            <el-select-v2
               v-model="toAdd"
+              :options="visibleAddable"
+              :props="{ label: 'display_name', value: 'guid' }"
               multiple
               filterable
-              placeholder="添加 GPO 到此 OU"
-              style="width: 320px"
+              :filter-method="onGpoFilter"
+              clearable
+              placeholder="添加 GPO 到此 OU（可搜名称/描述/GUID）"
+              style="width: 360px"
               @change="onAdd"
             >
-              <el-option v-for="g in addableGpos" :key="g.guid" :label="g.display_name" :value="g.guid" />
-            </el-select>
+              <template #default="{ item }">
+                <div class="gpo-opt">
+                  <span class="gpo-opt-name">{{ item.display_name }}</span>
+                  <span class="gpo-opt-sub">{{ item.description || item.guid }}</span>
+                </div>
+              </template>
+            </el-select-v2>
             <el-button type="primary" :loading="saving" :disabled="!writable" @click="save">保存</el-button>
           </div>
           <div v-if="pendingAdd.length" class="pending-row">
@@ -127,10 +136,27 @@ const pendingRemove = ref<string[]>([])
 
 // 表格显示 = 当前已绑定且未进入移除清单的链接；待添加项只在上方“添加清单”标签显示
 const tableLinks = computed(() => links.value.filter((l) => !pendingRemove.value.includes(l.guid)))
-// 下拉可选 = 既未绑定、也未进入添加清单的 GPO
+// 下拉可选 = 既未绑定、也未进入添加清单的 GPO（按显示名排序）
 const addableGpos = computed(() =>
-  gpos.value.filter((g) => !links.value.some((l) => l.guid === g.guid) && !pendingAdd.value.includes(g.guid)),
+  gpos.value
+    .filter((g) => !links.value.some((l) => l.guid === g.guid) && !pendingAdd.value.includes(g.guid))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, 'zh')),
 )
+// 搜索：匹配名称/描述/GUID（el-select-v2 设了 filter-method 后需自行过滤）
+const gpoQuery = ref('')
+const visibleAddable = computed(() => {
+  const q = gpoQuery.value.trim().toLowerCase()
+  if (!q) return addableGpos.value
+  return addableGpos.value.filter(
+    (g) =>
+      g.display_name.toLowerCase().includes(q) ||
+      (g.description || '').toLowerCase().includes(q) ||
+      g.guid.toLowerCase().includes(q),
+  )
+})
+function onGpoFilter(query: string) {
+  gpoQuery.value = query
+}
 function gpoName(guid: string) {
   return gpoMap.value[guid] || guid
 }
@@ -264,5 +290,26 @@ watch(domainId, () => {
 .pending-label {
   color: #909399;
   font-size: 13px;
+}
+</style>
+
+<style>
+.gpo-opt {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.3;
+  padding: 2px 0;
+}
+.gpo-opt-name {
+  font-size: 14px;
+  color: #303133;
+}
+.gpo-opt-sub {
+  font-size: 12px;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 320px;
 }
 </style>
