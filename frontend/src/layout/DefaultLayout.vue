@@ -81,6 +81,8 @@ import {
   Lock,
   Avatar,
   ArrowDown,
+  SetUp,
+  Delete,
 } from '@element-plus/icons-vue'
 import { useUserStore } from '@/store/user'
 import { useDomainStore } from '@/store/domain'
@@ -118,6 +120,8 @@ const MENUS: MenuDef[] = [
   { path: '/groups', title: '用户组', icon: UserFilled, roles: ['super_admin', 'admin', 'user'] },
   { path: '/computers', title: '计算机', icon: Monitor, roles: ['super_admin', 'admin', 'user'] },
   { path: '/batch', title: '批量任务', icon: Upload, roles: ['super_admin', 'admin'] },
+  { path: '/gpo', title: '组策略 GPO', icon: SetUp, roles: ['super_admin', 'admin'] },
+  { path: '/recycle', title: '回收站', icon: Delete, roles: ['super_admin', 'admin', 'auditor'] },
   { path: '/audit', title: '审计日志', icon: Document, roles: ['super_admin', 'admin', 'auditor'] },
   { path: '/rbac', title: '授权管理', icon: Lock, roles: ['super_admin'] },
   { path: '/accounts', title: '账户管理', icon: Avatar, roles: ['super_admin'] },

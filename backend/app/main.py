@@ -6,11 +6,15 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api.v1 import auth, accounts, audit, batch, computers, domain, groups, ous, rbac, users
+from app.api.v1 import auth, accounts, audit, batch, computers, domain, gpo, groups, ous, rbac, recyclebin, users
 from app.core.config import get_settings
 from app.db import init_db
 
 settings = get_settings()
+logging.basicConfig(
+    level=getattr(logging, settings.LOG_LEVEL.upper(), logging.INFO),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.APP_NAME, debug=settings.DEBUG)
@@ -33,7 +37,9 @@ app.include_router(groups.router, prefix=settings.API_PREFIX)
 app.include_router(computers.router, prefix=settings.API_PREFIX)
 app.include_router(audit.router, prefix=settings.API_PREFIX)
 app.include_router(batch.router, prefix=settings.API_PREFIX)
+app.include_router(gpo.router, prefix=settings.API_PREFIX)
 app.include_router(rbac.router, prefix=settings.API_PREFIX)
+app.include_router(recyclebin.router, prefix=settings.API_PREFIX)
 
 
 @app.on_event("startup")
