@@ -116,6 +116,7 @@ function toOptions(ous: OU[]): any[] {
 }
 
 const selectedOu = ref('')
+const prevOu = ref('')
 const blockInheritance = ref(false)
 const links = ref<GpoLink[]>([])
 const loadingLink = ref(false)
@@ -154,15 +155,18 @@ async function loadOus() {
   }
 }
 async function onOuChange() {
+  const nextOu = selectedOu.value
   if (pendingAdd.value.length || pendingRemove.value.length) {
     try {
       await ElMessageBox.confirm('切换 OU 将丢弃未保存的增删清单，确定继续？', '提示', {
         type: 'warning',
       })
     } catch {
-      return // 用户取消，保持当前 OU 与清单
+      selectedOu.value = prevOu.value // 取消则还原选择，保留原 OU 与清单
+      return
     }
   }
+  prevOu.value = nextOu
   toAdd.value = []
   pendingAdd.value = []
   pendingRemove.value = []
