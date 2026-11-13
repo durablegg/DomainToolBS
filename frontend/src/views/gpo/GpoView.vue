@@ -294,15 +294,22 @@ watch(domainId, () => {
 </style>
 
 <style>
+/* el-select-v2 虚拟列表行高固定 34px，选项必须单行：名称左、副标题右，超长省略 */
 .gpo-opt {
   display: flex;
-  flex-direction: column;
-  line-height: 1.3;
-  padding: 2px 0;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  width: 100%;
 }
 .gpo-opt-name {
   font-size: 14px;
   color: #303133;
+  flex-shrink: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .gpo-opt-sub {
   font-size: 12px;
@@ -310,6 +317,5 @@ watch(domainId, () => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 320px;
 }
 </style>
