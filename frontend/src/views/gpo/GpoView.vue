@@ -28,19 +28,48 @@
           <div class="toolbar">
             <span>阻止继承：</span>
             <el-switch v-model="blockInheritance" :disabled="!writable" />
-            <el-select
+            <el-select-v2
               v-model="toAdd"
+              :options="visibleAddable"
+              :props="{ label: 'display_name', value: 'guid' }"
               multiple
               filterable
-              placeholder="添加 GPO 到此 OU"
-              style="width: 320px"
+              :filter-method="onGpoFilter"
+              clearable
+              placeholder="添加 GPO 到此 OU（可搜名称/描述/GUID）"
+              style="width: 360px"
               @change="onAdd"
             >
-              <el-option v-for="g in addableGpos" :key="g.guid" :label="g.display_name" :value="g.guid" />
-            </el-select>
+              <template #default="{ item }">
+                <div class="gpo-opt">
+                  <span class="gpo-opt-name">{{ item.display_name }}</span>
+                  <span class="gpo-opt-sub">{{ item.description || item.guid }}</span>
+                </div>
+              </template>
+            </el-select-v2>
             <el-button type="primary" :loading="saving" :disabled="!writable" @click="save">保存</el-button>
           </div>
-          <el-table :data="links" v-loading="loadingLink" stripe>
+          <div v-if="pendingAdd.length" class="pending-row">
+            <span class="pending-label">添加清单：</span>
+            <el-tag
+              v-for="g in pendingAdd"
+              :key="g"
+              type="success"
+              closable
+              @close="undoAdd(g)"
+            >{{ gpoName(g) }}</el-tag>
+          </div>
+          <div v-if="pendingRemove.length" class="pending-row">
+            <span class="pending-label">移除清单：</span>
+            <el-tag
+              v-for="g in pendingRemove"
+              :key="g"
+              type="danger"
+              closable
+              @close="undoRemove(g)"
+            >{{ gpoName(g) }}</el-tag>
+          </div>
+          <el-table :data="tableLinks" v-loading="loadingLink" stripe>
             <el-table-column label="GPO" min-width="220">
               <template #default="{ row }">{{ gpoName(row.guid) }}</template>
             </el-table-column>
@@ -72,7 +101,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { listGpos, getOuGplinks, setOuGplinks, type Gpo, type GpoLink } from '@/api/gpo'
 import { listOus, type OU } from '@/api/ou'
 import { useDomainStore } from '@/store/domain'
@@ -96,13 +125,38 @@ function toOptions(ous: OU[]): any[] {
 }
 
 const selectedOu = ref('')
+const prevOu = ref('')
 const blockInheritance = ref(false)
 const links = ref<GpoLink[]>([])
 const loadingLink = ref(false)
 const saving = ref(false)
 const toAdd = ref<string[]>([])
+const pendingAdd = ref<string[]>([])
+const pendingRemove = ref<string[]>([])
 
-const addableGpos = computed(() => gpos.value.filter((g) => !links.value.some((l) => l.guid === g.guid)))
+// 表格显示 = 当前已绑定且未进入移除清单的链接；待添加项只在上方“添加清单”标签显示
+const tableLinks = computed(() => links.value.filter((l) => !pendingRemove.value.includes(l.guid)))
+// 下拉可选 = 既未绑定、也未进入添加清单的 GPO（按显示名排序）
+const addableGpos = computed(() =>
+  gpos.value
+    .filter((g) => !links.value.some((l) => l.guid === g.guid) && !pendingAdd.value.includes(g.guid))
+    .sort((a, b) => a.display_name.localeCompare(b.display_name, 'zh')),
+)
+// 搜索：匹配名称/描述/GUID（el-select-v2 设了 filter-method 后需自行过滤）
+const gpoQuery = ref('')
+const visibleAddable = computed(() => {
+  const q = gpoQuery.value.trim().toLowerCase()
+  if (!q) return addableGpos.value
+  return addableGpos.value.filter(
+    (g) =>
+      g.display_name.toLowerCase().includes(q) ||
+      (g.description || '').toLowerCase().includes(q) ||
+      g.guid.toLowerCase().includes(q),
+  )
+})
+function onGpoFilter(query: string) {
+  gpoQuery.value = query
+}
 function gpoName(guid: string) {
   return gpoMap.value[guid] || guid
 }
@@ -127,7 +181,21 @@ async function loadOus() {
   }
 }
 async function onOuChange() {
+  const nextOu = selectedOu.value
+  if (pendingAdd.value.length || pendingRemove.value.length) {
+    try {
+      await ElMessageBox.confirm('切换 OU 将丢弃未保存的增删清单，确定继续？', '提示', {
+        type: 'warning',
+      })
+    } catch {
+      selectedOu.value = prevOu.value // 取消则还原选择，保留原 OU 与清单
+      return
+    }
+  }
+  prevOu.value = nextOu
   toAdd.value = []
+  pendingAdd.value = []
+  pendingRemove.value = []
   if (!selectedOu.value) {
     links.value = []
     return
@@ -143,27 +211,47 @@ async function onOuChange() {
     loadingLink.value = false
   }
 }
+// 增量添加：只把新选的 GPO 放入“添加清单”，绝不覆盖已有链接；
+// 若勾选的项恰在“移除清单”里，则视为撤销移除
 function onAdd(val: string[]) {
   for (const guid of val) {
-    if (!links.value.some((l) => l.guid === guid)) {
-      links.value.push({ guid, dn: '', disabled: false, enforced: false })
-    }
+    if (links.value.some((l) => l.guid === guid)) continue
+    pendingRemove.value = pendingRemove.value.filter((g) => g !== guid)
+    if (!pendingAdd.value.includes(guid)) pendingAdd.value.push(guid)
   }
-  links.value = links.value.filter((l) => val.includes(l.guid))
+  toAdd.value = [] // 清空选择器，避免重复添加
 }
 function removeLink(guid: string) {
-  links.value = links.value.filter((l) => l.guid !== guid)
+  // 仅暂存到“移除清单”，表格按 tableLinks 自动隐藏该行
+  if (!pendingRemove.value.includes(guid)) pendingRemove.value.push(guid)
+}
+function undoAdd(guid: string) {
+  pendingAdd.value = pendingAdd.value.filter((g) => g !== guid)
+}
+function undoRemove(guid: string) {
+  pendingRemove.value = pendingRemove.value.filter((g) => g !== guid)
 }
 async function save() {
   if (!selectedOu.value) return
+  if (!pendingAdd.value.length && !pendingRemove.value.length) {
+    ElMessage.info('没有待应用的增删变更')
+    return
+  }
   saving.value = true
   try {
-    const payload = {
-      links: links.value.map((l) => ({ guid: l.guid, disabled: l.disabled, enforced: l.enforced })),
-      block_inheritance: blockInheritance.value,
+    const finalLinks = links.value
+      .filter((l) => !pendingRemove.value.includes(l.guid))
+      .map((l) => ({ guid: l.guid, disabled: l.disabled, enforced: l.enforced }))
+    for (const guid of pendingAdd.value) {
+      finalLinks.push({ guid, disabled: false, enforced: false })
     }
-    await setOuGplinks(encodeDN(selectedOu.value), domainId.value, payload)
+    await setOuGplinks(encodeDN(selectedOu.value), domainId.value, {
+      links: finalLinks,
+      block_inheritance: blockInheritance.value,
+    })
     ElMessage.success('已保存 OU 的 GPO 关联')
+    pendingAdd.value = []
+    pendingRemove.value = []
     await onOuChange()
   } catch (e: any) {
     ElMessage.error(e?.response?.data?.detail || '保存失败')
@@ -191,5 +279,43 @@ watch(domainId, () => {
   gap: 12px;
   margin: 12px 0;
   flex-wrap: wrap;
+}
+.pending-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 8px 0;
+}
+.pending-label {
+  color: #909399;
+  font-size: 13px;
+}
+</style>
+
+<style>
+/* el-select-v2 虚拟列表行高固定 34px，选项必须单行：名称左、副标题右，超长省略 */
+.gpo-opt {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  width: 100%;
+}
+.gpo-opt-name {
+  font-size: 14px;
+  color: #303133;
+  flex-shrink: 0;
+  max-width: 55%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.gpo-opt-sub {
+  font-size: 12px;
+  color: #909399;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>
