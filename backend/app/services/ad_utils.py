@@ -3,19 +3,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 from ldap3 import SUBTREE
 
-# LDAP 时间值（GeneralizedTime / FILETIME）一律为 UTC，而容器/服务器多以 UTC 运行；
-# 展示统一转成北京时间（UTC+8，无夏令时，用固定偏移即可）。转完去掉 tzinfo，
-# 使序列化/字符串化输出形如 "2026-11-12 22:59:36"，前端直接显示。
-_TZ_CN = timezone(timedelta(hours=8))
-
-
+# LDAP 时间值（GeneralizedTime / FILETIME）一律为 UTC，统一归一化为 UTC 后再交给前端；
+# 前端的 formatDateTime 会按浏览器本地时区做唯一的 +8（或其他时区偏移）转换，避免双重换算。
+# 注意：后端不要在这里预先 +8，否则会与前端再叠加一次（已删除的 to_local 北京偏移）。
 def to_local(dt: datetime | None) -> datetime | None:
-    """UTC 时间转北京时间并去掉 tzinfo；naive 输入视为 UTC。"""
+    """把任意 LDAP 时间归一化为 UTC（去掉时区信息），交给前端统一转本地时区显示。"""
     if dt is None:
         return None
     if dt.tzinfo is None:
         dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(_TZ_CN).replace(tzinfo=None)
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 # userAccountControl 标志位
 UAC_ACCOUNT_DISABLE = 0x0002

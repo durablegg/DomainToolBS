@@ -35,7 +35,9 @@
         <template #default="{ row }">{{ typeLabel(row.object_type) }}</template>
       </el-table-column>
       <el-table-column prop="parent" label="原父容器" min-width="260" />
-      <el-table-column prop="when_deleted" label="删除时间" width="200" />
+      <el-table-column label="删除时间" width="200">
+        <template #default="{ row }">{{ formatDateTime(row.when_deleted) }}</template>
+      </el-table-column>
       <el-table-column label="操作" width="90" fixed="right">
         <template #default="{ row }">
           <el-button link type="primary" :disabled="!writable || !status?.enabled" @click="doRestore(row)">恢复</el-button>
@@ -68,6 +70,7 @@ import { useDomainStore } from '@/store/domain'
 import { useUserStore } from '@/store/user'
 import { canWrite } from '@/utils/roles'
 import { encodeDN } from '@/utils/dn'
+import { formatDateTime } from '@/utils/datetime'
 
 const domainStore = useDomainStore()
 const userStore = useUserStore()
